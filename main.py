@@ -4084,7 +4084,7 @@ import time
 from datetime import datetime, timezone
 import requests
 
-logger = logging.getLogger(name)
+logger = logging.getLogger(__name__)
 
 
 def get_questions():
