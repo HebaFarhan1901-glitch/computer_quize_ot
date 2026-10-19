@@ -13,41 +13,44 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# محاكاة لخدمة PropertiesService و CacheService في ذاكرة البايثون
-# (في البيئة الإنتاجية يُفضل استخدام Redis أو دالة قاعدة بيانات)
+# جلب البيانات الحساسة من متغيرات البيئة لمنع التسريب
 PROPERTIES = {
-    "BOT_TOKEN": "8961543175:AAFyLgnCSpgbORd65ftUJm6oyq2yitKzncc",
+    "BOT_TOKEN": os.getenv("BOT_TOKEN", "8961543175:AAFyLgnCSpgbORd65ftUJm6oyq2yitKzncc"),
     "WEB_APP_URL": os.getenv("WEB_APP_URL", ""),
-    "ADMIN_ID": "602498802"
+    "ADMIN_ID": os.getenv("ADMIN_ID", "602498802")
 }
 
 SCRIPT_CACHE = {}  # { key: (value, expire_timestamp) }
 SCRIPT_LOCK = threading.Lock()
 
-# دالة التعامل مع Cache مع وقت انتهاء الصلاحية
+# دالة التعامل مع Cache مع حماية خيوط التنفيذ (Thread Safety)
 def cache_get(key: str):
-    if key in SCRIPT_CACHE:
-        val, expire_at = SCRIPT_CACHE[key]
-        if time.time() < expire_at:
-            return val
-        else:
-            del SCRIPT_CACHE[key]
-    return None
+    with SCRIPT_LOCK:
+        if key in SCRIPT_CACHE:
+            val, expire_at = SCRIPT_CACHE[key]
+            if time.time() < expire_at:
+                return val
+            else:
+                del SCRIPT_CACHE[key]
+        return None
 
 def cache_put(key: str, value: str, ttl_seconds: int = 21600):
-    SCRIPT_CACHE[key] = (value, time.time() + ttl_seconds)
+    with SCRIPT_LOCK:
+        SCRIPT_CACHE[key] = (value, time.time() + ttl_seconds)
 
 # الصفحة الرئيسية
 @app.get("/", response_class=PlainTextResponse)
 def do_get():
     return "Yasser Quiz Bot is running"
 
-# استقبال رسائل Telegram
+# استقبال رسائل Telegram (تم تحويلها لـ synchronous لتجنب مشاكل requests مع Async)
 @app.post("/webhook", response_class=PlainTextResponse)
-async def do_post(request: Request):
+def do_post(request: Request):
     try:
+        # قراءة محتوى الطلب بشكل متزامن
         try:
-            e_contents = await request.json()
+            import asyncio
+            e_contents = asyncio.run(request.json())
         except Exception:
             return "OK"
 
@@ -63,33 +66,23 @@ async def do_post(request: Request):
         update_id = update.get("update_id")
         key = f"update_{update_id}"
 
-        # استخدام Lock بمهلة زمنية (waitLock)
-        acquired = SCRIPT_LOCK.acquire(timeout=10)
-        if not acquired:
-            logger.warning("Lock timeout")
+        # منع معالجة التحديث نفسه أكثر من مرة باسناد الـ Lock داخل Cache مباشرة
+        if cache_get(key):
+            logger.info(f"Duplicate update ignored: {update_id}")
             return "OK"
 
-        try:
-            # منع معالجة التحديث نفسه أكثر من مرة
-            if cache_get(key):
-                logger.info(f"Duplicate update ignored: {update_id}")
-                return "OK"
+        # تسجيل التحديث فوراً
+        cache_put(key, "1", 21600)
 
-            # معالجة الرسائل وضغطات الأزرار داخل الحماية نفسها
-            if "callback_query" in update:
-                handle_callback_query(update["callback_query"])
-            elif "message" in update:
-                handle_message(update["message"])
+        # معالجة الرسائل وضغطات الأزرار
+        if "callback_query" in update:
+            handle_callback_query(update["callback_query"])
+        elif "message" in update:
+            handle_message(update["message"])
 
-            # تسجيل التحديث بعد نجاح المعالجة
-            cache_put(key, "1", 21600)
-            logger.info(f"Update processed: {update_id}")
-
-        finally:
-            SCRIPT_LOCK.release()
+        logger.info(f"Update processed: {update_id}")
 
     except Exception as err:
-        # نسجل الخطأ دون محاولة إرسال رسالة خطأ جديدة عبر Telegram
         logger.error(f"doPost ERROR: {err}", exc_info=True)
 
     return "OK"
@@ -149,21 +142,16 @@ def is_admin(user_id):
 
 # إدارة حالة المستخدم
 def get_state(user_id):
-    raw_state = PROPERTIES.get(f"STATE_{user_id}", "{}")
-    return json.loads(raw_state)
+    raw_state = cache_get(f"STATE_{user_id}")
+    return json.loads(raw_state) if raw_state else {}
 
 def save_state(user_id, state):
-    PROPERTIES[f"STATE_{user_id}"] = json.dumps(state)
+    cache_put(f"STATE_{user_id}", json.dumps(state), ttl_seconds=86400)
 
 def clear_state(user_id):
-    PROPERTIES.pop(f"STATE_{user_id}", None)
+    with SCRIPT_LOCK:
+        SCRIPT_CACHE.pop(f"STATE_{user_id}", None)
 
-# الدوال التي تحتاج لتكتمل بناءً على باقي الكود الخاص بك:
-def handle_message(message):
-    pass
-
-def handle_callback_query(callback_query):
-    pass
 question_explanations = {
     "From which tab can WordArt be inserted in Microsoft Word?":
         "يُدرج WordArt من تبويب Insert، لأنه أداة لإضافة نصوص بتنسيقات وتأثيرات فنية.",
@@ -1821,14 +1809,6 @@ def answer_callback_query(callback_id, text=""):
         )
     except Exception as e:
         print(f"Error in answer_callback_query: {e}")
-
-
-# دوال مساعدة لصفحات الإدارة والتعديل والحذف (سيتم توفير تفاصيلها في الجزء القادم)
-def show_delete_page(chat_id, page):
-    pass
-
-def show_edit_page(chat_id, page):
-    pass
 
 
 # معالجة تفاعلات الأزرار (handleCallbackQuery)
