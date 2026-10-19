@@ -18,7 +18,7 @@ app = FastAPI()
 PROPERTIES = {
     "BOT_TOKEN": "8961543175:AAFyLgnCSpgbORd65ftUJm6oyq2yitKzncc",
     "WEB_APP_URL": os.getenv("WEB_APP_URL", ""),
-    "ADMIN_ID": "602498802,7996075818"
+    "ADMIN_ID": "602498802"
 }
 
 SCRIPT_CACHE = {}  # { key: (value, expire_timestamp) }
