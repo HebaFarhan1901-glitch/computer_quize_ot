@@ -2728,32 +2728,7 @@ def handle_callback_query_continued(callback):
         )
 
     # اختيار مادة عند إضافة سؤال
-    if data.startswith("addcat:"):
-        if not is_admin(chat_id) or state.get("mode") != "add" or state.get("step") != "category":
-            answer_callback_query(callback_id, "انتهت صلاحية الاختيار")
-            return
-
-        try:
-            index = int(data[7:])
-            subjects = state.get("subjects", [])
-            if index < 0 or index >= len(subjects):
-                raise ValueError()
-        except ValueError:
-            answer_callback_query(callback_id, "اختيار غير صالح")
-            return
-
-        state["category"] = subjects[index]
-        state["step"] = "question"
-        save_state(chat_id, state)
-
-        answer_callback_query(callback_id, "تم اختيار المادة")
-        return send(
-            chat_id,
-            f"المادة: {state['category']}\n\nاكتب نص السؤال."
-        )
-
-    # اختيار مادة قديمة عبر cat:
-    if data.startswith("cat:"):
+   if data.startswith("cat:"):
         if state.get("mode") != "pick":
             answer_callback_query(callback_id, "ابدأ اختبارًا جديدًا")
             return send(chat_id, "ابدأ اختبارًا جديدًا باستخدام /quiz")
@@ -2767,12 +2742,13 @@ def handle_callback_query_continued(callback):
             answer_callback_query(callback_id, "اختيار غير صالح")
             return send(chat_id, "اختيار المادة غير صالح.")
 
-        category = categories[index]
-        questions = [q for q in get_questions() if q.get("category") == category]
+        category = str(categories[index]).strip()
+        # مطابقة القسم مع تنظيف المسافات لضمان عدم فشل الجلب
+        questions = [q for q in get_questions() if str(q.get("category", "")).strip() == category]
 
         if not questions:
             answer_callback_query(callback_id, "لا توجد أسئلة")
-            return send(chat_id, "لا توجد أسئلة لهذه المادة.")
+            return send(chat_id, f"لا توجد أسئلة مضافة حالياً في قسم ({category}).")
 
         part_size = 25
         part_count = -(-len(questions) // part_size)
@@ -2810,8 +2786,8 @@ def handle_callback_query_continued(callback):
             answer_callback_query(callback_id, "اختيار غير صالح")
             return send(chat_id, "الجزء المختار غير صالح.")
 
-        category = state.get("category")
-        all_questions = [q for q in get_questions() if q.get("category") == category]
+        category = str(state.get("category", "")).strip()
+        all_questions = [q for q in get_questions() if str(q.get("category", "")).strip() == category]
 
         part_size = 25
         start = part_index * part_size
@@ -2944,7 +2920,6 @@ def finish_exam(chat_id, state, timed_out=False):
         "duration": f"{duration_seconds // 60} دقيقة و{duration_seconds % 60} ثانية",
         "completedAt": datetime.now(timezone.utc).isoformat()
     })
-
     report = (
         "⏰ انتهى وقت الاختبار!\n\n" if timed_out else "🎉 انتهى الاختبار!\n\n"
     )
