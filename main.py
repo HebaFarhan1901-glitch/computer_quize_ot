@@ -43,7 +43,7 @@ def do_get():
     return "Yasser Quiz Bot is running"
 
 # استقبال رسائل Telegram
-@app.post("/", response_class=PlainTextResponse)
+@app.post("/webhook", response_class=PlainTextResponse)
 async def do_post(request: Request):
     try:
         try:
