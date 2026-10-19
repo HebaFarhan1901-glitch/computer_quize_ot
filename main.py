@@ -1595,10 +1595,25 @@ question_explanations = {
 logger = logging.getLogger(__name__)
 
 def get_questions():
-    base_questions = get_base_question_data()
+    raw_base = get_base_question_data()
+    base_questions = []
+    
+    # تحويل البيانات الأساسية من مصفوفة إلى قاموس منسق بالمعرفات الصحيحة
+    for i, q in enumerate(raw_base, start=1):
+        base_questions.append({
+            "id": f"Q{i}",
+            "category": str(q[0]).strip(),
+            "question": str(q[1]).strip(),
+            "options": [str(x) for x in q[2:6]],
+            "answer": str(q[6]).strip().upper(),
+            "explanation": q[7] if len(q) > 7 else ""
+        })
 
     saved_edits = json.loads(PROPERTIES.get("QUESTION_EDITS", "{}"))
-    saved_new = json.loads(PROPERTIES.get("NEW_QUESTIONS", "[]"))
+    
+    # تصحيح اسم المفتاح ليكون متوافقاً مع ما يتم حفظه (NEW_QUESTION أو NEW_QUESTIONS)
+    saved_new = json.loads(PROPERTIES.get("NEW_QUESTIONS", PROPERTIES.get("NEW_QUESTION", "[]")))
+    
     deleted_question_ids = [
         str(x) for x in json.loads(PROPERTIES.get("DELETED_QUESTIONS", "[]"))
     ]
@@ -1611,15 +1626,15 @@ def get_questions():
         edit = saved_edits.get(q_id, {})
 
         explanation = (
-            edit["explanation"] if "explanation" in edit else q.get("explanation")
+            edit["explanation"] if "explanation" in edit else q.get("explanation", "")
         )
 
         merged_q = {
             **q,
-            "category": edit.get("category", q.get("category")),
-            "question": edit.get("question", q.get("question")),
-            "options": edit.get("options", q.get("options")),
-            "answer": edit.get("answer", q.get("answer")),
+            "category": str(edit.get("category", q.get("category", ""))).strip(),
+            "question": edit.get("question", q.get("question", "")),
+            "options": edit.get("options", q.get("options", [])),
+            "answer": str(edit.get("answer", q.get("answer", ""))).strip().upper(),
             "explanation": explanation
         }
         processed_questions.append(merged_q)
