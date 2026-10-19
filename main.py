@@ -4087,7 +4087,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 
-    questions = []
+questions = []
     for i, q in enumerate(data, start=1):
         question_text = str(q[1]).strip()
         explanation = question_explanations.get(question_text, "") if 'question_explanations' in globals() else ""
