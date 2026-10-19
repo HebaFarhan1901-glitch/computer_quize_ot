@@ -1580,13 +1580,22 @@ question_explanations = {
     
 }
 
+import json
+import logging
+import time
+import uuid
+import requests
+
+# تعريف التسجيل مرة واحدة فقط
 logger = logging.getLogger(__name__)
+
+# يفترض وجود PROPERTIES و send و is_admin و is_user_subscribed و send_subscription_prompt و get_state و save_state و clear_state في البيئة
 
 def get_questions():
     raw_base = get_base_question_data()
     base_questions = []
     
-    # تحويل البيانات الأساسية من مصفوفة إلى قاموس منسق بالمعرفات الصحيحة
+    # تحويل البيانات الأساسية من مصفوفة إلى قاموس منسق
     for i, q in enumerate(raw_base, start=1):
         base_questions.append({
             "id": f"Q{i}",
@@ -1598,10 +1607,7 @@ def get_questions():
         })
 
     saved_edits = json.loads(PROPERTIES.get("QUESTION_EDITS", "{}"))
-    
-    # تصحيح اسم المفتاح ليكون متوافقاً مع ما يتم حفظه (NEW_QUESTION أو NEW_QUESTIONS)
     saved_new = json.loads(PROPERTIES.get("NEW_QUESTIONS", PROPERTIES.get("NEW_QUESTION", "[]")))
-    
     deleted_question_ids = [
         str(x) for x in json.loads(PROPERTIES.get("DELETED_QUESTIONS", "[]"))
     ]
@@ -1613,9 +1619,7 @@ def get_questions():
         q_id = str(q.get("id"))
         edit = saved_edits.get(q_id, {})
 
-        explanation = (
-            edit["explanation"] if "explanation" in edit else q.get("explanation", "")
-        )
+        explanation = edit.get("explanation", q.get("explanation", ""))
 
         merged_q = {
             **q,
@@ -1627,7 +1631,6 @@ def get_questions():
         }
         processed_questions.append(merged_q)
 
-    # تصفية الأسئلة المستوفية للشروط
     filtered_questions = []
     for q in processed_questions:
         options = q.get("options")
@@ -1646,129 +1649,6 @@ def get_questions():
     return filtered_questions
 
 
-# معالجة الأوامر والرسائل
-def handle_message(m):
-    chat = m.get("chat", {})
-    chat_id = chat.get("id")
-    logger.info(f"CHAT ID: {chat_id}")
-
-    text = str(m.get("text") or "").strip()
-
-    # استقبال ملفات PDF من المشرف
-    document = m.get("document")
-    if document:
-        if not is_admin(chat_id):
-            return send(chat_id, "رفع الملفات مخصص للمشرف فقط.")
-
-        if document.get("mime_type") != "application/pdf":
-            return send(chat_id, "أرسل الملف بصيغة PDF.")
-
-        file1 = PROPERTIES.get("PDF_FILE_1")
-        file2 = PROPERTIES.get("PDF_FILE_2")
-
-        if not file1:
-            PROPERTIES["PDF_FILE_1"] = document.get("file_id")
-            return send(chat_id, "تم حفظ ملف PDF الأول ✅\nأرسل ملف PDF الثاني.")
-
-        PROPERTIES["PDF_FILE_2"] = document.get("file_id")
-        return send(chat_id, "تم حفظ ملف PDF الثاني بنجاح ✅")
-
-    if not text:
-        return
-
-    button_commands = {
-        "📝 بدء الاختبار": "/quiz",
-        "📚 اختيار المادة": "/quiz",
-        "ℹ️ المساعدة": "/help",
-        "🛠 الإدارة": "/admin",
-        "📁 ملفات اختبار الحاسوب": "/malaزم",
-        "📊 تقرير": "/report",
-        "➕ إضافة سؤال": "/add"
-    }
-
-    text = button_commands.get(text, text)
-
-    if text == "/report":
-        if not is_admin(chat_id):
-            return send(chat_id, "هذا التقرير مخصص للمشرفين فقط.")
-        return show_exam_report(chat_id)
-
-    if not is_user_subscribed(chat_id):
-        return send_subscription_prompt(chat_id)
-
-    if text == "/malaزم":
-        file1 = PROPERTIES.get("PDF_FILE_1")
-        file2 = PROPERTIES.get("PDF_FILE_2")
-        token = PROPERTIES.get("BOT_TOKEN")
-
-        if not file1 or not file2:
-            return send(chat_id, "الملزمتان غير محفوظتين. يرجى إبلاغ المشرف.")
-
-        files = [file1, file2]
-
-        for i, file_id in enumerate(files):
-            response = requests.post(
-                f"https://api.telegram.org/bot{token}/sendDocument",
-                data={
-                    "chat_id": str(chat_id),
-                    "document": file_id
-                }
-            )
-
-            result = response.json()
-
-            if not result.get("ok"):
-                logger.error(f"PDF error: {response.text}")
-                return send(
-                    chat_id,
-                    f"فشل إرسال الملف رقم {i + 1}\nالخطأ: {result.get('description')}"
-                )
-
-        return send(chat_id, "تم إرسال الملزمتين بنجاح ✅")
-
-    if text == "📝 فورمات اختبار الحاسوب":
-        forms_message = (
-            "الفورمات التي تخص قناتنه جداً مهمة\n\n"
-            "✅ سنة 2026 هاي الفورم مالتها 125 سؤال مطولة بس من أهم الفورمات:\n"
-            "https://forms.gle/8KYjdsFJYEaUKB7H7\n\n"
-            "✅ الفورم الأولى للحاسوب:\nhttps://forms.gle/MtD5mBBH1tmGCVWW6\n\n"
-            "✅ الفورم الثانية للحاسوب:\nhttps://forms.gle/JaG3pSRA2bnRiymz8\n\n"
-            "✅ الفورم الثالثة للحاسوب:\nhttps://forms.gle/BdKQhXRm7kYVMqSZA\n\n"
-            "✅ الفورم الرابعة للحاسوب:\nhttps://forms.gle/3rGoi7xYD3pbyixd9\n\n"
-            "✅ الفورم الخامسة للحاسوب:\nhttps://forms.gle/NEYLHBA5PVGC6Pa99\n\n"
-            "✅ الفورم السادسة للحاسوب:\nhttps://forms.gle/QHSxm5pQMYy42kNG7\n\n"
-            "✅ الفورم السابعة للحاسوب:\nhttps://forms.gle/eVY4p4U8jrrSiiTn7\n\n"
-            "✅ الفورم الثامنة للحاسوب:\nhttps://forms.gle/9BefhkQeybxPHruJ8\n\n"
-            "✅ الفورم التاسعة للحاسوب:\nhttps://forms.gle/3zUK6E67nZKNuS6i6\n\n"
-            "✅ الفورم العاشرة للحاسوب:\nhttps://forms.gle/9BefhkQeybxPHruJ8\n\n"
-            "✅ الفورم الحادي عشر للحاسوب:\nhttps://forms.gle/B6KYQ7rKxMhxtabGA\n\n"
-            "✅ الفورم الثاني عشر للحاسوب:\nhttps://forms.gle/WeGQkg5bWhpS3GvRA\n\n"
-            "✅ الفورم الثالث عشر اليوم للحاسوب:\nhttps://forms.gle/fKz1Se9xVvwpjkfg6\n\n"
-            "✅ الفورم الرابع عشر للحاسوب:\nhttps://forms.gle/7zFC6cHAJzYhs4J16\n\n"
-            "✅ الفورم الخامس عشر للحاسوب:\nhttps://forms.gle/4KsvE7ZQKM5FybwEA\n\n"
-            "✅ الفورم السادس عشر للحاسوب:\nhttps://forms.gle/gsB97jVabRpsqV8AA\n\n"
-            "✅ الفورم السابع عشر للحاسوب:\nhttps://forms.gle/9SrQNALpBkeDXjQr9\n\n"
-            "قناة الست هبة حسين:\nhttps://t.me/hibhibcomp"
-        )
-        return send(chat_id, forms_message, main_keyboard(chat_id))
-
-    if text == "💻 أسئلة اختبار الحاسوب":
-        keyboard = [
-            [{"text": "💻 أساسيات الحاسوب", "callback_data": "subject:basics"}],
-            [{"text": "📊 Excel", "callback_data": "subject:excel"}],
-            [{"text": "📝 Word", "callback_data": "subject:word"}],
-            [{"text": "📽️ PowerPoint", "callback_data": "subject:powerpoint"}]
-        ]
-
-        return send(
-            chat_id,
-            "📚 اختر المادة التي تريد حل أسئلتها:",
-            {"inline_keyboard": keyboard}
-        )
-import json
-import requests
-
-# لوحة المفاتيح الرئيسية (mainKeyboard)
 def main_keyboard(user_id):
     keyboard = [
         [
@@ -1793,25 +1673,272 @@ def main_keyboard(user_id):
     }
 
 
-# الاستجابة لضغطات أزرار Callback (answerCallbackQuery)
 def answer_callback_query(callback_id, text=""):
-    token = CONFIG.get("BOT_TOKEN")
-
-    payload = {
-        "callback_query_id": callback_id,
-        "text": text
-    }
-
+    token = PROPERTIES.get("BOT_TOKEN")
     try:
         requests.post(
             f"https://api.telegram.org/bot{token}/answerCallbackQuery",
-            json=payload
+            headers={"Content-Type": "application/json"},
+            data=json.dumps({
+                "callback_query_id": callback_id,
+                "text": text
+            })
         )
     except Exception as e:
-        print(f"Error in answer_callback_query: {e}")
+        logger.error(f"Error in answer_callback_query: {e}")
 
 
-# معالجة تفاعلات الأزرار (handleCallbackQuery)
+def ask_question(chat_id, state):
+    q = state["questions"][state["index"]]
+    state["answerLocked"] = False
+    save_state(chat_id, state)
+
+    remaining = max(0, int((state["deadline"] - (time.time() * 1000)) / 1000))
+
+    keyboard = [
+        [
+            {"text": "A", "callback_data": f"ans:{state['index']}:A"},
+            {"text": "B", "callback_data": f"ans:{state['index']}:B"},
+            {"text": "C", "callback_data": f"ans:{state['index']}:C"},
+            {"text": "D", "callback_data": f"ans:{state['index']}:D"}
+        ]
+    ]
+
+    options_text = (
+        f"A) {q['options'][0]}\n\n"
+        f"B) {q['options'][1]}\n\n"
+        f"C) {q['options'][2]}\n\n"
+        f"D) {q['options'][3]}"
+    )
+
+    if is_admin(chat_id):
+        keyboard.append([
+            {"text": "✏️ تعديل هذا السؤال", "callback_data": f"editq:{q['id']}"},
+            {"text": "🗑️ حذف هذا السؤال", "callback_data": f"deleteq:{q['id']}"}
+        ])
+
+    text_msg = (
+        f"📚 المادة: {state['category']}\n"
+        f"السؤال {state['index'] + 1} من {len(state['questions'])}\n"
+        f"⏱️ الوقت المتبقي تقريباً: {remaining} ثانية\n\n"
+        f"❓ {q['question']}\n\n"
+        f"{options_text}\n\n"
+        f"👇 اختر الإجابة الصحيحة:"
+    )
+
+    return send(chat_id, text_msg, {"inline_keyboard": keyboard})
+
+
+# معالجة الأوامر والرسائل النصية (دمج handle_message و handle_message_continued)
+def handle_message(m):
+    chat = m.get("chat", {})
+    chat_id = chat.get("id")
+    logger.info(f"CHAT ID: {chat_id}")
+
+    text = str(m.get("text") or "").strip()
+
+    # استقبال ملفات PDF من المشرف
+    document = m.get("document")
+    if document:
+        if not is_admin(chat_id):
+            return send(chat_id, "رفع الملفات مخصص للمشرف فقط.")
+
+        if document.get("mime_type") != "application/pdf":
+            return send(chat_id, "أرسل الملف بصيغة PDF.")
+
+        file1 = PROPERTIES.get("PDF_FILE_1")
+        if not file1:
+            PROPERTIES["PDF_FILE_1"] = document.get("file_id")
+            return send(chat_id, "تم حفظ ملف PDF الأول ✅\nأرسل ملف PDF الثاني.")
+
+        PROPERTIES["PDF_FILE_2"] = document.get("file_id")
+        return send(chat_id, "تم حفظ ملف PDF الثاني بنجاح ✅")
+
+    if not text:
+        return
+
+    # استبدال نصوص الأزرار بالأوامر
+    button_commands = {
+        "📝 بدء الاختبار": "/quiz",
+        "📚 اختيار المادة": "/quiz",
+        "ℹ️ المساعدة": "/help",
+        "🛠 الإدارة": "/admin",
+        "📁 ملفات اختبار الحاسوب": "/malaزم",
+        "📊 تقرير": "/report",
+        "➕ إضافة سؤال": "/add"
+    }
+    text = button_commands.get(text, text)
+
+    # الأوامر العامة
+    if text == "/start":
+        if not is_user_subscribed(chat_id):
+            return send_subscription_prompt(chat_id)
+        return send(chat_id, "أهلاً بك في بوت الاختبارات 📚🇮🇶\n\nاختر أحد الأزرار أدناه للبدء.", main_keyboard(chat_id))
+
+    if text == "/help":
+        return send(chat_id, "/quiz — بدء اختبار\n/id — معرفة معرّف حسابك\n/cancel — إلغاء العملية الحالية")
+
+    if text == "/cancel":
+        clear_state(chat_id)
+        return send(chat_id, "تم إلغاء العملية والعودة للقائمة الرئيسية.", main_keyboard(chat_id))
+
+    if text == "/id":
+        return send(
+            chat_id,
+            f"معرّف المحادثة: {chat_id}\n"
+            f"معرّف المشرف: {PROPERTIES.get('ADMIN_ID', 'غير محدد')}\n"
+            f"الملف الأول: {'محفوظ' if PROPERTIES.get('PDF_FILE_1') else 'غير محفوظ'}\n"
+            f"الملف الثاني: {'محفوظ' if PROPERTIES.get('PDF_FILE_2') else 'غير محفوظ'}"
+        )
+
+    if text == "/report":
+        if not is_admin(chat_id):
+            return send(chat_id, "هذا التقرير مخصص للمشرفين فقط.")
+        return show_exam_report(chat_id)
+
+    if not is_user_subscribed(chat_id):
+        return send_subscription_prompt(chat_id)
+
+    if text == "/malaزم":
+        file1 = PROPERTIES.get("PDF_FILE_1")
+        file2 = PROPERTIES.get("PDF_FILE_2")
+        token = PROPERTIES.get("BOT_TOKEN")
+
+        if not file1 or not file2:
+            return send(chat_id, "الملزمتان غير محفوظتين. يرجى إبلاغ المشرف.")
+
+        for i, file_id in enumerate([file1, file2]):
+            response = requests.post(
+                f"https://api.telegram.org/bot{token}/sendDocument",
+                data={"chat_id": str(chat_id), "document": file_id}
+            )
+            result = response.json()
+            if not result.get("ok"):
+                return send(chat_id, f"فشل إرسال الملف رقم {i + 1}\nالخطأ: {result.get('description')}")
+
+        return send(chat_id, "تم إرسال الملزمتين بنجاح ✅")
+
+    if text == "📝 فورمات اختبار الحاسوب":
+        forms_message = (
+            "الفورمات التي تخص قناتنا جداً مهمة\n\n"
+            "✅ سنة 2026 هاي الفورم مالتها 125 سؤال مطولة بس من أهم الفورمات:\n"
+            "https://forms.gle/8KYjdsFJYEaUKB7H7\n\n"
+            "قناة الست هبة حسين:\nhttps://t.me/hibhibcomp"
+        )
+        return send(chat_id, forms_message, main_keyboard(chat_id))
+
+    if text in ["💻 أسئلة اختبار الحاسوب", "/quiz"]:
+        clear_state(chat_id)
+        keyboard = [
+            [{"text": "💻 أساسيات الحاسوب", "callback_data": "subject:basics"}],
+            [{"text": "📊 Excel", "callback_data": "subject:excel"}],
+            [{"text": "📝 Word", "callback_data": "subject:word"}],
+            [{"text": "📽️ PowerPoint", "callback_data": "subject:powerpoint"}]
+        ]
+        return send(chat_id, "📚 اختر المادة التي تريد حل أسئلتها:", {"inline_keyboard": keyboard})
+
+    if text == "/admin":
+        if not is_admin(chat_id):
+            return send(chat_id, "هذا الأمر مخصص للمشرف.")
+        return send(
+            chat_id,
+            "🛠 إدارة البوت\n\nاختر العملية المطلوبة:",
+            {
+                "inline_keyboard": [
+                    [{"text": "➕ إضافة سؤال", "callback_data": "admin:add"}],
+                    [{"text": "✏️ تعديل سؤال", "callback_data": "admin:edit"}],
+                    [{"text": "🗑️ حذف سؤال", "callback_data": "admin:delete"}],
+                    [{"text": "⏱️ تحديد مدة الاختبار", "callback_data": "admin:time"}]
+                ]
+            }
+        )
+
+    if text.startswith("/time "):
+        if not is_admin(chat_id):
+            return send(chat_id, "غير مسموح.")
+        try:
+            n = int(text.split()[1])
+            if not (1 <= n <= 180):
+                raise ValueError()
+            PROPERTIES["QUIZ_MINUTES"] = str(n)
+            return send(chat_id, f"تم تحديد مدة الاختبار: {n} دقيقة.")
+        except (IndexError, ValueError):
+            return send(chat_id, "اكتب مدة صحيحة من 1 إلى 180 دقيقة.")
+
+    if text == "/add":
+        if not is_admin(chat_id):
+            return send(chat_id, "غير مسموح.")
+        subjects = ["مكونات الحاسوب", "Excel", "Word", "PowerPoint", "الإنترنت", "Windows", "قواعد البيانات", "الإيميل"]
+        save_state(chat_id, {"mode": "add", "step": "category", "subjects": subjects})
+        keyboard = [[{"text": sub, "callback_data": f"addcat:{i}"}] for i, sub in enumerate(subjects)]
+        return send(chat_id, "📚 اختر المادة التي تريد إضافة سؤال إليها:", {"inline_keyboard": keyboard})
+
+    # إدخال القيم أثناء التعديل أو الإضافة
+    state = get_state(chat_id)
+
+    if state.get("mode") == "edit" and is_admin(chat_id) and state.get("step") == "value":
+        field = state.get("editField")
+        question_id = state.get("questionId")
+        value = text.strip()
+
+        if field == "answer":
+            value = value.upper()
+            if value not in ["A", "B", "C", "D"]:
+                return send(chat_id, "اكتب حرف الإجابة الصحيحة فقط: A أو B أو C أو D.")
+
+        if field == "options":
+            options = [x.strip() for x in value.split("|")]
+            if len(options) != 4 or any(not x for x in options):
+                return send(chat_id, "اكتب الخيارات الأربعة وافصل بينها بالرمز |")
+            value = options
+
+        if field == "explanation" and value == "مسح":
+            value = ""
+
+        save_question_edit(question_id, field, value)
+        clear_state(chat_id)
+        return send(chat_id, "تم حفظ تعديل السؤال بنجاح ✅")
+
+    if state.get("mode") == "add" and is_admin(chat_id):
+        step = state.get("step")
+        if step == "question":
+            state["question"] = text
+            state["step"] = "options"
+            save_state(chat_id, state)
+            return send(chat_id, "اكتب الخيارات الأربعة برسالة واحدة وافصل بينها بالرمز |")
+
+        if step == "options":
+            options = [x.strip() for x in text.split("|")]
+            if len(options) != 4 or any(not x for x in options):
+                return send(chat_id, "أحتاج أربعة خيارات بالضبط، افصل بينها بالرمز |")
+            state["options"] = options
+            state["step"] = "answer"
+            save_state(chat_id, state)
+            return send(chat_id, "اكتب حرف الإجابة الصحيحة: A أو B أو C أو D")
+
+        if step == "answer":
+            answer = text.upper()
+            if answer not in ["A", "B", "C", "D"]:
+                return send(chat_id, "اكتب A أو B أو C أو D فقط.")
+
+            new_question = {
+                "id": "N" + uuid.uuid4().hex[:12],
+                "category": state["category"],
+                "question": state["question"],
+                "options": [str(x) for x in state["options"]],
+                "answer": answer,
+                "explanation": ""
+            }
+            saved_new = json.loads(PROPERTIES.get("NEW_QUESTIONS", "[]"))
+            saved_new.append(new_question)
+            PROPERTIES["NEW_QUESTIONS"] = json.dumps(saved_new)
+            clear_state(chat_id)
+            return send(chat_id, "تم حفظ السؤال الجديد بنجاح ✅")
+
+    return send(chat_id, "اكتب /start للبدء أو /quiz لاختيار اختبار.")
+
+
+# معالجة تفاعلات الأزرار
 def handle_callback_query(callback):
     message = callback.get("message", {})
     chat = message.get("chat", {})
@@ -1819,49 +1946,31 @@ def handle_callback_query(callback):
     callback_id = callback.get("id")
     data = str(callback.get("data", ""))
 
-    # التنقل بين صفحات حذف الأسئلة
     if data.startswith("deletepage:"):
         if not is_admin(chat_id):
-            answer_callback_query(callback_id, "هذا الأمر مخصص للمشرف.")
-            return
-
+            return answer_callback_query(callback_id, "هذا الأمر مخصص للمشرف.")
         answer_callback_query(callback_id)
         page = int(data[len("deletepage:"):])
         return show_delete_page(chat_id, page)
 
-    # أوامر لوحة الإدارة
     if data.startswith("admin:"):
         if not is_admin(chat_id):
-            answer_callback_query(callback_id, "هذا الأمر مخصص للمشرف.")
-            return
-
-        if data == "admin:add":
-            answer_callback_query(callback_id)
-            return send(chat_id, "لإضافة سؤال جديد، أرسل الأمر /add")
-
-        if data == "admin:edit":
-            answer_callback_query(callback_id)
-            return show_edit_page(chat_id, 0)
-
-        if data == "admin:delete":
-            answer_callback_query(callback_id)
-            return show_delete_page(chat_id, 0)
-
-        if data == "admin:time":
-            answer_callback_query(callback_id)
-            return send(chat_id, "أرسل الأمر /time متبوعًا بالمدة بالدقائق.\nمثال: /time 30")
-
-    # التحقق من الاشتراك بالقناة
-    if data == "check_subscription":
+            return answer_callback_query(callback_id, "هذا الأمر مخصص للمشرف.")
         answer_callback_query(callback_id)
 
-        if is_user_subscribed(chat_id):
-            return send(
-                chat_id,
-                "✅ تم التحقق من اشتراكك بنجاح. تفضل باستخدام البوت.",
-                main_keyboard(chat_id)
-            )
+        if data == "admin:add":
+            return send(chat_id, "لإضافة سؤال جديد، أرسل الأمر /add")
+        if data == "admin:edit":
+            return show_edit_page(chat_id, 0)
+        if data == "admin:delete":
+            return show_delete_page(chat_id, 0)
+        if data == "admin:time":
+            return send(chat_id, "أرسل الأمر /time متبوعًا بالمدة بالدقائق.\nمثال: /time 30")
 
+    if data == "check_subscription":
+        answer_callback_query(callback_id)
+        if is_user_subscribed(chat_id):
+            return send(chat_id, "✅ تم التحقق من اشتراكك بنجاح.", main_keyboard(chat_id))
         return send_subscription_prompt(chat_id)
 
     if not is_user_subscribed(chat_id):
@@ -1870,31 +1979,14 @@ def handle_callback_query(callback):
 
     state = get_state(chat_id)
 
-    # اختيار قسم أو مادة للاختبار
     if data.startswith("subject:") or data.startswith("section:"):
-        category = ""
-
-        subjects = {
-            "basics": None,
-            "excel": "Excel",
-            "word": "Word",
-            "powerpoint": "PowerPoint"
-        }
-
-        sections = {
-            "components": "مكونات الحاسوب",
-            "internet": "الإنترنت",
-            "windows": "Windows",
-            "database": "قواعد البيانات",
-            "email": "الإيميل"
-        }
+        subjects = {"basics": None, "excel": "Excel", "word": "Word", "powerpoint": "PowerPoint"}
+        sections = {"components": "مكونات الحاسوب", "internet": "الإنترنت", "windows": "Windows", "database": "قواعد البيانات", "email": "الإيميل"}
 
         if data.startswith("subject:"):
             subject = data[8:]
-
             if subject == "basics":
                 answer_callback_query(callback_id, "تم اختيار أساسيات الحاسوب")
-
                 keyboard = [
                     [{"text": "🧩 مكونات الحاسوب", "callback_data": "section:components"}],
                     [{"text": "🌐 الإنترنت", "callback_data": "section:internet"}],
@@ -1902,231 +1994,56 @@ def handle_callback_query(callback):
                     [{"text": "🗄️ قواعد البيانات", "callback_data": "section:database"}],
                     [{"text": "📧 الإيميل", "callback_data": "section:email"}]
                 ]
-
-                return send(
-                    chat_id,
-                    "💻 اختر قسم أساسيات الحاسوب:",
-                    {"inline_keyboard": keyboard}
-                )
-
+                return send(chat_id, "💻 اختر قسم أساسيات الحاسوب:", {"inline_keyboard": keyboard})
             category = subjects.get(subject)
         else:
             category = sections.get(data[8:])
 
         answer_callback_query(callback_id, "تم اختيار القسم")
-
         if not category:
             return send(chat_id, "القسم غير معروف.")
 
         questions = [q for q in get_questions() if q.get("category") == category]
-
         if not questions:
-            return send(
-                chat_id,
-                f"لا توجد أسئلة مضافة حاليًا في قسم {category}.\nسيتمكن الطالب من الاختبار بعد إضافة أسئلة هذا القسم."
-            )
+            return send(chat_id, f"لا توجد أسئلة مضافة حاليًا في قسم {category}.")
 
         part_size = 25
-        part_count = (len(questions) + part_size - 1) // part_size  # حساب عدد الأجزاء بالتقريب للأعلى
+        part_count = (len(questions) + part_size - 1) // part_size
 
-        save_state(chat_id, {
-            "mode": "pickPart",
-            "category": category,
-            "partCount": part_count
-        })
+        save_state(chat_id, {"mode": "pickPart", "category": category, "partCount": part_count})
 
         keyboard = []
         for i in range(part_count):
             start = i * part_size
             count = min(part_size, len(questions) - start)
-            keyboard.append([{
-                "text": f"الجزء {i + 1} ({count} سؤال)",
-                "callback_data": f"part:{i}"
-            }])
+            keyboard.append([{"text": f"الجزء {i + 1} ({count} سؤال)", "callback_data": f"part:{i}"}])
 
-        return send(
-            chat_id,
-            f"📚 القسم: {category}\n📝 مجموع الأسئلة: {len(questions)}\n\nاختر الجزء الذي تريد اختباره:",
-            {"inline_keyboard": keyboard}
-        )
+        return send(chat_id, f"📚 القسم: {category}\n📝 مجموع الأسئلة: {len(questions)}\n\nاختر الجزء الذي تريد اختباره:", {"inline_keyboard": keyboard})
 
-    # التنقل بين صفحات التعديل
-    if data.startswith("editpage:"):
-        if not is_admin(chat_id):
-            answer_callback_query(callback_id, "هذا الأمر مخصص للمشرف.")
-            return
-
-        answer_callback_query(callback_id)
-        page = int(data[len("editpage:"):])
-        return show_edit_page(chat_id, page)
-
-    # اختيار سؤال محدد للتعديل
-    if data.startswith("editq:"):
-        if not is_admin(chat_id):
-            answer_callback_query(callback_id, "هذا الأمر مخصص للمشرف.")
-            return
-
-        question_id = data[len("editq:"):].strip()
-        question = next((q for q in get_questions() if str(q.get("id")) == question_id), None)
-
-        if not question:
-            answer_callback_query(callback_id, "لم يُعثر على السؤال.")
-            return send(chat_id, "تعذر العثور على السؤال. افتح قائمة التعديل من جديد.")
-
-        save_state(chat_id, {
-            "mode": "edit",
-            "step": "field",
-            "questionId": question_id
-        })
-
-        answer_callback_query(callback_id)
-
-        keyboard = [
-            [{"text": "📝 نص السؤال", "callback_data": "editfield:question"}],
-            [{"text": "📚 المادة", "callback_data": "editfield:category"}],
-            [{"text": "🔤 الخيارات الأربعة", "callback_data": "editfield:options"}],
-            [{"text": "✅ الإجابة الصحيحة", "callback_data": "editfield:answer"}],
-            [{"text": "💡 شرح الإجابة", "callback_data": "editfield:explanation"}],
-            [{"text": "❌ إلغاء التعديل", "callback_data": "editcancel"}]
-        ]
-
-        return send(
-            chat_id,
-            f"✏️ اختر الحقل الذي تريد تعديله:\n\n📚 المادة: {question.get('category')}\n❓ السؤال: {question.get('question')}",
-            {"inline_keyboard": keyboard}
-        )
-
-    # اختيار حقل محدد لتعديله
-    if data.startswith("editfield:"):
-        if not is_admin(chat_id):
-            answer_callback_query(callback_id, "هذا الأمر مخصص للمشرف.")
-            return
-
-        if state.get("mode") != "edit" or state.get("step") != "field":
-            answer_callback_query(callback_id, "انتهت صلاحية التعديل.")
-            return send(chat_id, "افتح قائمة التعديل من جديد عبر /admin.")
-
-        field = data[len("editfield:"):].strip()
-        fields = {
-            "question": "نص السؤال",
-            "category": "المادة",
-            "options": "الخيارات الأربعة",
-            "answer": "الإجابة الصحيحة",
-            "explanation": "شرح الإجابة"
-        }
-
-        if field not in fields:
-            answer_callback_query(callback_id, "حقل غير صالح.")
-            return
-
-        state["step"] = "value"
-        state["editField"] = field
-        save_state(chat_id, state)
-
-        answer_callback_query(callback_id)
-
-        if field == "options":
-            return send(
-                chat_id,
-                "🔤 أرسل الخيارات الأربعة برسالة واحدة، وافصل بينها بالرمز | \nمثال: Internet | WAN | LAN | PAN"
-            )
-
-        if field == "answer":
-            return send(chat_id, "✅ أرسل حرف الإجابة الصحيحة فقط: A أو B أو C أو D.")
-
-        if field == "explanation":
-            return send(
-                chat_id,
-                "💡 أرسل شرح الإجابة الجديد.\nإذا تريد مسح الشرح، أرسل: مسح"
-            )
-
-        return send(chat_id, f"✏️ أرسل القيمة الجديدة لحقل: {fields[field]}.")
-
-    # إلغاء التعديل
-    if data == "editcancel":
-        if not is_admin(chat_id):
-            answer_callback_query(callback_id, "هذا الأمر مخصص للمشرف.")
-            return
-
-        clear_state(chat_id)
-        answer_callback_query(callback_id, "تم إلغاء التعديل.")
-        return send(chat_id, "تم إلغاء التعديل، ولم تُحفظ أي تغييرات.")
-
-    # طلب حذف سؤال
-    if data.startswith("deleteq:"):
-        if not is_admin(chat_id):
-            answer_callback_query(callback_id, "هذا الأمر مخصص للمشرف.")
-            return
-
-        question_id = data[len("deleteq:"):].strip()
-        question = next((q for q in get_questions() if str(q.get("id")) == question_id), None)
-
-        if not question:
-            answer_callback_query(callback_id, "لم يُعثر على السؤال.")
-            return send(chat_id, "لم يُعثر على السؤال. افتح قائمة الحذف من جديد.")
-
-        answer_callback_query(callback_id)
-
-        keyboard = [
-            [{"text": "🗑️ نعم، احذف السؤال", "callback_data": f"confirmdeleteq:{question_id}"}],
-            [{"text": "❌ إلغاء", "callback_data": "canceldeleteq"}]
-        ]
-
-        return send(
-            chat_id,
-            f"⚠️ هل أنت متأكد من حذف هذا السؤال؟\n\n📚 المادة: {question.get('category')}\n❓ السؤال: {question.get('question')}\n🔑 المعرّف: {question_id}",
-            {"inline_keyboard": keyboard}
-        )
-
-    # إلغاء الحذف
-    if data == "canceldeleteq":
-        answer_callback_query(callback_id, "تم إلغاء الحذف.")
-        return send(chat_id, "تم إلغاء العملية. لم يُحذف أي سؤال.")
-
-    # تأكيد حذف السؤال
     if data.startswith("confirmdeleteq:"):
         if not is_admin(chat_id):
-            answer_callback_query(callback_id, "هذا الأمر مخصص للمشرف.")
-            return
-
+            return answer_callback_query(callback_id, "هذا الأمر مخصص للمشرف.")
         question_id = data[len("confirmdeleteq:"):].strip()
-        question = next((q for q in get_questions() if str(q.get("id")) == question_id), None)
-
-        if not question:
-            answer_callback_query(callback_id, "لم يُعثر على السؤال.")
-            return send(chat_id, "لم يُعثر على السؤال. لم يتم حذف شيء.")
-
-        deleted = json.loads(CONFIG.get("DELETED_QUESTIONS", "[]"))
+        deleted = json.loads(PROPERTIES.get("DELETED_QUESTIONS", "[]"))
         if question_id not in deleted:
             deleted.append(question_id)
-            CONFIG["DELETED_QUESTIONS"] = json.dumps(deleted)
-
+            PROPERTIES["DELETED_QUESTIONS"] = json.dumps(deleted)
         answer_callback_query(callback_id, "تم حذف السؤال.")
-        return send(
-            chat_id,
-            f"✅ تم حذف السؤال بنجاح.\n\n📚 المادة: {question.get('category')}\n❓ السؤال: {question.get('question')}"
-        )
+        return send(chat_id, "✅ تم حذف السؤال بنجاح.")
 
-    # اختيار مادة عند إضافة سؤال
     if data.startswith("addcat:"):
         if not is_admin(chat_id) or state.get("mode") != "add" or state.get("step") != "category":
-            answer_callback_query(callback_id, "انتهت صلاحية الاختيار")
-            return
-
+            return answer_callback_query(callback_id, "انتهت صلاحية الاختيار")
         index = int(data[7:])
         subjects = state.get("subjects", [])
-
-        if index < 0 or index >= len(subjects):
-            answer_callback_query(callback_id, "اختيار غير صالح")
-            return
-
-        state["category"] = subjects[index]
-        state["step"] = "question"
-        save_state(chat_id, state)
-
-        answer_callback_query(callback_id, "تم اختيار المادة")
-        return send(chat_id, f"المادة: {state['category']}\n\nاكتب نص السؤال.")
-        import json
+        if 0 <= index < len(subjects):
+            state["category"] = subjects[index]
+            state["step"] = "question"
+            save_state(chat_id, state)
+            answer_callback_query(callback_id, "تم اختيار المادة")
+            return send(chat_id, f"المادة: {state['category']}\n\nاكتب نص السؤال.")
+    
+import json
 import logging
 import requests
 import uuid
