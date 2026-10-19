@@ -15,7 +15,7 @@ app = FastAPI()
 
 # جلب البيانات الحساسة من متغيرات البيئة لمنع التسريب
 PROPERTIES = {
-    "BOT_TOKEN": os.getenv("BOT_TOKEN"),
+    "BOT_TOKEN": os.getenv("BOT_TOKEN:8823982671:AAH2QpIH2OWa6pMwKQ41hAADsYrZ_r8DaDM"),
     "WEB_APP_URL": os.getenv("WEB_APP_URL", ""),
     "ADMIN_ID": os.getenv("ADMIN_ID", "602498802")
 }
