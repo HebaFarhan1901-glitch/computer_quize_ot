@@ -4200,14 +4200,6 @@ import requests
 logger = logging.getLogger(__name__)
 
 
-def get_base_question_data():
-    data = [
-        ["Excel", "In Microsoft Excel, to insert a new row, do the following:", "From the Data menu, choose Insert Row.", "From the Edit menu, choose Insert Row.", "From the Insert menu, choose Rows", "From the Format menu, choose Row, and then choose...", "C"],
-        ["Excel", "To sort column A in ascending order, press the button:", "Sort and filter from group editing", "Sort and label from font collection", "Sort and label from editting", "All answers given are incorrect", "A"],
-        ["Excel", "In Microsoft Excel, which function should you use if you want to count cells that contain numbers only within a specific range?", "COUNTBLANK", "COUNT", "COUNTIF", "COUNTA", "B"],
-        ["Windows", "What do the letters (C, D, E) represent in the Windows operating system?", "Folder", "Drives", "Shortcut", "All of the above", "B"]
-    ]
-
     questions = []
     for i, q in enumerate(data, start=1):
         question_text = str(q[1]).strip()
