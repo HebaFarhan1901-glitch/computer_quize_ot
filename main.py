@@ -2640,7 +2640,7 @@ def handle_callback_query_continued(callback):
         )
 
     # اختيار مادة عند إضافة سؤال
-   if data.startswith("cat:"):
+    if data.startswith("cat:"):
         if state.get("mode") != "pick":
             answer_callback_query(callback_id, "ابدأ اختبارًا جديدًا")
             return send(chat_id, "ابدأ اختبارًا جديدًا باستخدام /quiz")
