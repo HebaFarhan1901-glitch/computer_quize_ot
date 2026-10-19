@@ -1591,18 +1591,8 @@ question_explanations = {
 "What do the letters (C, D, E) represent in the Windows operating system?": "وفق الإجابة المحددة في الملف، الخيار B هو Drives؛ أي أحرف محركات الأقراص أو أقسامها في Windows."
     
 }
-import json
-import logging
-import requests
 
 logger = logging.getLogger(__name__)
-
-# يفترض وجود قاموس PROPERTIES أو وظيفة لقراءة Script Properties كما بالمثال السابق
-# PROPERTIES = {...}
-
-def get_base_question_data():
-    # دالة جلب الأسئلة الأصلية (يتم تعريفها في جزء آخر من الكود)
-    return []
 
 def get_questions():
     base_questions = get_base_question_data()
