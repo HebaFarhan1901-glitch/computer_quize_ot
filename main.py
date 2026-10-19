@@ -4084,11 +4084,13 @@ import time
 from datetime import datetime, timezone
 import requests
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(name)
 
 
-questions = []
-for i, q in enumerate(data, start=1):
+def get_questions():
+    questions = []
+    # تأكد من توفر متغير data أو جلبه بالشكل المناسب هنا
+    for i, q in enumerate(data, start=1):
         question_text = str(q[1]).strip()
         explanation = question_explanations.get(question_text, "") if 'question_explanations' in globals() else ""
         
@@ -4101,7 +4103,7 @@ for i, q in enumerate(data, start=1):
             "explanation": explanation
         })
         
-        return questions
+    return questions
 
 
 def show_delete_page(chat_id, page):
@@ -4138,7 +4140,7 @@ def show_delete_page(chat_id, page):
 
     return send(
         chat_id,
-        f"🗑️ اختر السؤال الذي تريد حذفه.\nالصفحة: {page + 1} من {total_pages}\nعدد الأسئلة: {len(questions)}",
+        f"🗑 اختر السؤال الذي تريد حذفه.\nالصفحة: {page + 1} من {total_pages}\nعدد الأسئلة: {len(questions)}",
         {"inline_keyboard": keyboard}
     )
 
@@ -4303,10 +4305,10 @@ def get_telegram_student_info(chat_id):
     try:
         url = f"https://api.telegram.org/bot{token}/getChat?chat_id={chat_id}"
         response = requests.get(url, timeout=10)
-        data = response.json()
+        data_res = response.json()
 
-        if data.get("ok"):
-            user = data.get("result", {})
+        if data_res.get("ok"):
+            user = data_res.get("result", {})
             names = [user.get("first_name"), user.get("last_name")]
             full_name = " ".join(filter(None, names))
 
